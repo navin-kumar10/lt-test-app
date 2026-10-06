@@ -79,7 +79,7 @@ jobs:
 
     environment:
 
-      name: production
+      name: Production
 
       url: https://nextjs.nkscloud.run.place
 
