@@ -1,0 +1,331 @@
+name: CI/CD - Next.js Application
+
+on:
+
+  push:
+
+    branches:
+
+      - main
+
+  workflow_dispatch:
+
+permissions:
+
+  contents: read
+
+concurrency:
+
+  group: production-deployment
+
+  cancel-in-progress: false
+
+jobs:
+
+  # ==========================================
+  # CI
+  # ==========================================
+
+  ci:
+
+    name: CI - Validate Application
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout source
+
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+
+        uses: actions/setup-node@v4
+
+        with:
+
+          node-version: 24
+
+          cache: npm
+
+      - name: Install dependencies
+
+        run: npm ci
+
+      - name: Dependency security audit
+
+        run: |
+
+          echo "Running dependency security audit..."
+
+          npm audit --omit=dev || true
+
+      - name: Build application
+
+        run: npm run build
+
+
+  # ==========================================
+  # CD
+  # ==========================================
+
+  deploy:
+
+    name: CD - Deploy to EC2
+
+    needs: ci
+
+    runs-on: ubuntu-latest
+
+    environment:
+
+      name: production
+
+      url: https://nextjs.nkscloud.run.place
+
+    steps:
+
+      # ----------------------------------------
+      # Configure SSH
+      # ----------------------------------------
+
+      - name: Configure SSH
+
+        env:
+
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+
+          EC2_SSH_PORT: ${{ secrets.EC2_SSH_PORT }}
+
+        run: |
+
+          set -e
+
+          mkdir -p ~/.ssh
+
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh-keyscan -p "$EC2_SSH_PORT" "$EC2_HOST" >> ~/.ssh/known_hosts
+
+          chmod 644 ~/.ssh/known_hosts
+
+
+      # ----------------------------------------
+      # Deploy
+      # ----------------------------------------
+
+      - name: Deploy to EC2
+
+        env:
+
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+
+          EC2_USER: ${{ secrets.EC2_USER }}
+
+          EC2_PORT: ${{ secrets.EC2_SSH_PORT }}
+
+        run: |
+
+          set -e
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$EC2_PORT" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" << 'EOF'
+
+          set -e
+
+          # ----------------------------------------
+          # Load NVM / Node.js
+          # ----------------------------------------
+
+          export NVM_DIR="$HOME/.nvm"
+
+          if [ -s "$NVM_DIR/nvm.sh" ]; then
+            . "$NVM_DIR/nvm.sh"
+          else
+            echo "ERROR: NVM not found"
+            exit 1
+          fi
+
+          nvm use 24
+
+          echo "Node.js version:"
+          node -v
+
+          echo "npm version:"
+          npm -v
+
+          echo "PM2 version:"
+          pm2 -v
+
+
+          # ----------------------------------------
+          # Application directory
+          # ----------------------------------------
+
+          cd /var/www/lt-test-app
+
+          echo "======================================"
+          echo "Starting deployment"
+          echo "======================================"
+
+
+          # ----------------------------------------
+          # Current version
+          # ----------------------------------------
+
+          echo "Current commit:"
+          git rev-parse --short HEAD
+
+
+          # ----------------------------------------
+          # Update source code
+          # ----------------------------------------
+
+          echo "Fetching latest source..."
+
+          git fetch origin main
+
+          echo "Updating application..."
+
+          git reset --hard origin/main
+
+          echo "New commit:"
+          git rev-parse --short HEAD
+
+
+          # ----------------------------------------
+          # Install dependencies
+          # ----------------------------------------
+
+          echo "Installing dependencies..."
+
+          npm ci
+
+
+          # ----------------------------------------
+          # Build application
+          # ----------------------------------------
+
+          echo "Building application..."
+
+          npm run build
+
+
+          # ----------------------------------------
+          # Reload PM2
+          # ----------------------------------------
+
+          echo "Reloading PM2..."
+
+          pm2 reload lt-test-app --update-env
+
+
+          # ----------------------------------------
+          # Save PM2 process list
+          # ----------------------------------------
+
+          echo "Saving PM2 process list..."
+
+          pm2 save
+
+
+          # ----------------------------------------
+          # PM2 status
+          # ----------------------------------------
+
+          echo "Checking PM2 status..."
+
+          pm2 status
+
+
+          # ----------------------------------------
+          # Application health check
+          # ----------------------------------------
+
+          echo "Running local health check..."
+
+          HEALTH_CHECK_PASSED=false
+
+          for i in {1..15}; do
+
+            if curl -fsS http://127.0.0.1:3000 > /dev/null; then
+              echo "Health check passed."
+              HEALTH_CHECK_PASSED=true
+              break
+            fi
+
+            echo "Application not ready. Attempt $i/15"
+            sleep 2
+
+          done
+
+
+          # ----------------------------------------
+          # Health check result
+          # ----------------------------------------
+
+          if [ "$HEALTH_CHECK_PASSED" != "true" ]; then
+
+            echo "======================================"
+            echo "Health check failed"
+            echo "======================================"
+
+            echo "PM2 status:"
+            pm2 status
+
+            echo "PM2 logs:"
+            pm2 logs lt-test-app --lines 100 --nostream
+
+            echo "Listening ports:"
+            ss -lntp
+
+            exit 1
+
+          fi
+
+
+          echo "======================================"
+          echo "Deployment completed successfully"
+          echo "======================================"
+
+          EOF
+
+
+      # ----------------------------------------
+      # Verify public HTTPS
+      # ----------------------------------------
+
+      - name: Verify public HTTPS
+
+        run: |
+
+          set -e
+
+          echo "Checking public HTTPS endpoint..."
+
+          curl -fsS https://nextjs.nkscloud.run.place/ > /dev/null
+
+          echo "Public HTTPS health check passed."
+
+
+      # ----------------------------------------
+      # Cleanup SSH key
+      # ----------------------------------------
+
+      - name: Cleanup SSH key
+
+        if: always()
+
+        run: |
+
+          rm -f ~/.ssh/deploy_key
