@@ -1,0 +1,73 @@
+# Dependencies
+
+node_modules/
+
+# Next.js
+
+.next/
+out/
+
+# Production
+
+build/
+
+# Environment / secrets
+
+.env
+.env.*
+!.env.example
+
+# Logs
+
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Runtime files
+
+*.pid
+*.pid.lock
+
+# Testing / coverage
+
+coverage/
+.nyc_output/
+
+# Cache
+
+.cache/
+.turbo/
+.eslintcache
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+
+tmp/
+temp/
+
+# Local configuration
+
+*.local
+
+# Vercel
+
+.vercel/
+
+# Generated screenshots / local assessment evidence
+
+# Remove this line if screenshots are required to be committed.
+
+# screenshots/
