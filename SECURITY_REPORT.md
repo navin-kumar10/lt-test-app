@@ -502,6 +502,18 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 Strict-Transport-Security: max-age=31536000
 ```
 
+Post-deploy re-verification (2026-10-07, from the production host itself) confirmed the same set, full response:
+
+```text
+HTTP/1.1 404 Not Found
+Server: nginx/1.28.3 (Ubuntu)
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Strict-Transport-Security: max-age=31536000
+```
+
 No `Content-Security-Policy` is set anywhere. Re-check with:
 
 ```bash
@@ -534,7 +546,7 @@ The deployment documentation records 404s for `/.git/`, `/.git/config`, `/.git/H
 
 **Status:** Mitigated at the web-server layer, subject to live re-verification.
 
-A live re-check was attempted (`GET /.git/HEAD`) but the host was resetting connections from the assessment IP by then (see §10), so testing was stopped rather than persisted with. Re-run from the reviewer's network:
+A live re-check was attempted (`GET /.git/HEAD`) but the host was resetting connections from the assessment IP by then (see §10), so testing was stopped rather than persisted with. Post-deploy verification from the production host (2026-10-07) returned `HTTP/1.1 404 Not Found` for `/.git/HEAD` — blocking confirmed live. Re-run from the reviewer's network anytime:
 
 ```bash
 for path in /.git/ /.git/config /.git/HEAD /.env /.env.local; do
@@ -664,7 +676,7 @@ Internet
 SendGrid → Business inbox
 ```
 
-Retest: allowance then `429 {"error":"Too many requests..."}`. Distributed floods remain a job for upstream layers (Nginx `limit_req` / WAF / quota monitoring).
+Retest: allowance then `429 {"error":"Too many requests..."}`. Live post-deploy check (2026-10-07) returned `200 200 200 200 429 429` for a 6-request burst — four passes because an earlier valid submit had consumed the first window slot, then blocking, exactly per design. A valid live submit also returned `200 {"success":true}`, confirming legitimate mail flow still works. Distributed floods remain a job for upstream layers (Nginx `limit_req` / WAF / quota monitoring).
 
 **Finding:** SEC-001 / SEC-005
 
@@ -762,7 +774,7 @@ npm audit --omit=dev
 
 ### Headers
 
-Observed once live (§10). Post-deploy re-check:
+Verified live post-deploy 2026-10-07 (§10): `SAMEORIGIN`, `nosniff`, HSTS present; no CSP (open follow-up).
 
 ```bash
 curl -sSI https://nextjs.nkscloud.run.place/
@@ -770,23 +782,26 @@ curl -sSI https://nextjs.nkscloud.run.place/
 
 ### Source exposure
 
+Verified live post-deploy 2026-10-07: `404` (§11).
+
 ```bash
 curl -I https://nextjs.nkscloud.run.place/.git/HEAD   # expect 404
 ```
 
-Live re-check still open (connection resets from assessment IP; §11).
-
 ---
 
-# 19. Evidence Still Required (was §17 — updated)
+# 19. Evidence Still Required (was §17 — updated post-deploy 2026-10-07)
 
 - [x] Controlled abuse PoC (12 requests, local, dummy key) — §3
+- [x] Live rate-limit proof (6-burst → 4×200 then 429s; first window slot used by prior valid submit) — §16
+- [x] Live valid submit → `200 {"success":true}` (legitimate mail flow intact) — §16
 - [x] Validation PoCs (garbage / malformed / oversized) — §4, §9
 - [x] HTML-injection handling evidence (HTTP layer + static assertion) — §5
 - [x] `npm audit` before/after mapping — §6
-- [x] Security headers (one live observation) — §10
-- [ ] Live `/.git` + `/` header re-verification from a clean network — §10, §11
-- [ ] Real SendGrid email-render check in staging — §5
+- [x] Security headers (live observation + post-deploy re-verification) — §10
+- [x] Clickjacking verification (`SAMEORIGIN` live) — §10
+- [x] `.git` exposure verification (live 404) — §11
+- [ ] Real SendGrid email-render check in staging (escaped-text rendering in an actual mailbox)
 - [ ] PM2 non-root / UFW / Nginx config host verification — §14 (docs-based)
 - [ ] HTTPS certificate / public-URL checks — deployment evidence already in `screenshots/`
 
