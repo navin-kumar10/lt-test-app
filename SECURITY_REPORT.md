@@ -6,10 +6,10 @@
 **Repository:** `navin-kumar10/lt-test-app`  
 **Live URL:** https://nextjs.nkscloud.run.place  
 **Assessment Phase:** Phase 3 — Security Vulnerability Assessment  
-**Branch:** `security-fixes`  
-**Assessment status:** Complete — findings remediated on `security-fixes`; every finding below has a local PoC plus retest evidence. Live-only re-verification (real SendGrid send, `/.git` re-check) is called out where it still applies.
+**Branch:** `security-fixes` (remediation) → merged to `main` (PR #1 + follow-ups) and deployed to production.
+**Assessment status:** Complete — remediated, deployed, and live-verified post-deploy (2026-10-07). Every finding below has a local PoC plus retest evidence; live proofs are folded in where obtained.
 
-Fix commits: `security: validate, escape, and rate-limit contact API; bump next and sendgrid client` followed by this report.
+Fix commits: route hardening + dep bump, merged report with PoC evidence, README, DEPLOYMENT decisions index, live-verification fold-ins, CI SendGrid-secret export (staged on `security-fixes`; merge gated on GitHub secrets existing).
 
 ### Scope
 
@@ -352,7 +352,7 @@ Every field passes through a 5-line `escapeHtml()` (`route.ts:31-39`) before HTM
 interpolations inside html email body: ['safeName', 'safeEmail', 'safePhone', 'safeMessage']
 ```
 
-A structurally-valid injection payload post-fix still passes validation (correct — it is well-formed input) but reaches SendGrid only in escaped form; end-to-end rendering was not observed because the test env has no real SendGrid key — stated, not fudged.
+A structurally-valid injection payload post-fix still passes validation (correct — it is well-formed input) but reaches SendGrid only in escaped form. End-to-end mailbox rendering is pending the controlled live render check (R2: one `example.com` link submit, owner confirms literal text) — stated, not fudged.
 
 **Status:** Fixed
 
@@ -587,6 +587,8 @@ No hardcoded SendGrid API key was identified in the reviewed application source,
 
 **Status:** Pass based on source review; secret-store configuration should still be verified on the EC2 host and GitHub repository.
 
+Production update (2026-10-07): `SENDGRID_*` now lives in a gitignored host `.env` (restricted permissions) loaded into PM2 via `reload --update-env`. To survive redeploys, the CI workflow exports `SENDGRID_API_KEY`/`SENDGRID_TO_EMAIL` from GitHub Actions secrets — staged on `security-fixes`, merge held until the secrets exist in repo settings (merging earlier would export empty values and break mail). Standing policy: any credential exposed outside the host or secret store is rotated immediately and never pasted into chats, docs, or tickets.
+
 ---
 
 # 13. Authentication / Authorization (was §11)
@@ -621,7 +623,7 @@ The deployment contains the following security controls:
 | HTTP → HTTPS | PASS |
 | PM2 | PASS |
 | PM2 reboot persistence | PASS |
-| .git blocking | PASS (per deployment docs; live re-check pending, §11) |
+| .git blocking | PASS (live 404 verified 2026-10-07, §11) |
 | Security headers | Observed live once (§10); CSP still open |
 
 ## Root Privilege Scenario
@@ -698,7 +700,7 @@ Retest: garbage → 400; well-formed injection payload passes validation but onl
 
 ## Scenario 3 — Obtain source code from browser
 
-**Result:** No app-layer disclosure; Nginx `/.git` deny-block per deployment docs; **live re-verification still open** (§11).
+**Result:** No app-layer disclosure; Nginx `/.git` deny-block confirmed live (`/.git/HEAD` → 404, 2026-10-07, §11).
 
 The GitHub repository is publicly accessible by design, so public repository visibility is not classified as a server-side source-disclosure finding.
 
@@ -758,7 +760,7 @@ malformed JSON → 400 {"error":"Invalid JSON request body"}
 
 ### HTML injection
 
-Injected markup reaches only escaped interpolation (`safe*` vars asserted); renders as text, not markup. Live-render check needs a real key in staging.
+Injected markup reaches only escaped interpolation (`safe*` vars asserted); renders as text, not markup. Live mailbox render check (R2) pending; production is now configured with a real key.
 
 ### Dependencies
 
@@ -801,7 +803,9 @@ curl -I https://nextjs.nkscloud.run.place/.git/HEAD   # expect 404
 - [x] Security headers (live observation + post-deploy re-verification) — §10
 - [x] Clickjacking verification (`SAMEORIGIN` live) — §10
 - [x] `.git` exposure verification (live 404) — §11
-- [ ] Real SendGrid email-render check in staging (escaped-text rendering in an actual mailbox)
+- [ ] Real SendGrid email-render check in production (R2: one controlled submit, escaped-text rendering confirmed in the actual mailbox)
+- [ ] R1/R2 live retest completion (invalid → 400; injection → 200 + inbox check)
+- [ ] GitHub `SENDGRID_*` secrets + merge of CI export (staged on `security-fixes`; merge gated) + rotation of any exposed credential
 - [ ] PM2 non-root / UFW / Nginx config host verification — §14 (docs-based)
 - [ ] HTTPS certificate / public-URL checks — deployment evidence already in `screenshots/`
 
@@ -816,7 +820,7 @@ The infrastructure deployment was already reasonably hardened; the application l
 3. **HTML injection in outbound business email** → escaped interpolation (verified at HTTP + source level)
 4. **Outdated Next.js with known vulnerabilities** → 15.5.27, build green (verified)
 
-Residual, openly documented: in-memory limiter (single-instance OK), `X-Forwarded-For` trust (fine behind this Nginx; prefer `X-Real-IP`), no CSP yet, no CAPTCHA/quota monitoring, build-time-only audit leftovers, and the live re-checks above. Redeploy through the existing CI/CD pipeline whenever ready — `npm run build` passes, normal form submits are unaffected.
+Residual, openly documented: in-memory limiter (single-instance OK), `X-Forwarded-For` trust (fine behind this Nginx; prefer `X-Real-IP`), no CSP yet, no CAPTCHA/quota monitoring, build-time-only audit leftovers. Production runs the fixed build (merged to `main`, live-verified 2026-10-07); remaining: mailbox render check (R2), R1/R2 completion, GitHub secrets + CI merge with credential rotation.
 
 ---
 
