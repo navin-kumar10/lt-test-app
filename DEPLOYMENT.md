@@ -454,5 +454,7 @@ Short version of why the server looks the way it does:
 | Nginx config | server-block inline in §9; confirm the matching screenshot in `screenshots/` |
 | SSL certificate | `sudo certbot certificates` inline in §10; confirm the matching screenshot in `screenshots/` |
 | CI/CD workflow | `.github/workflows/deploy.yml` + `screenshots/git-actions.png`, `screenshots/cd-ec2.png`, `screenshots/ci-cd-ec2.png` |
+| Live mail flow (test + burst emails in inbox) | `screenshots/send-grid-2.png` — verified: submissions arrive end-to-end |
+| Escaped-render proof (R2 email as literal text) | `screenshots/sg-mail.png` — verified: `<a href>` visible, not clickable |
 
 Note: `pm2-status.png` predates the security-fix redeploy (shows next-server v15.1.0). Refresh it after deploying the fixed build so the evidence matches what is running.
