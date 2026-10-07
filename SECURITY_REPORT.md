@@ -264,6 +264,14 @@ Failures return `400 {"error":"Invalid contact form data"}` with `Cache-Control:
 {"error":"Invalid contact form data"}  HTTP 400
 ```
 
+Live production retest (R1, real key configured, 2026-10-07):
+
+```text
+{"error":"Invalid contact form data"}  HTTP 400
+```
+
+Validation gates before SendGrid on prod too — no email generated.
+
 **Status:** Fixed
 
 ---
@@ -352,7 +360,7 @@ Every field passes through a 5-line `escapeHtml()` (`route.ts:31-39`) before HTM
 interpolations inside html email body: ['safeName', 'safeEmail', 'safePhone', 'safeMessage']
 ```
 
-A structurally-valid injection payload post-fix still passes validation (correct — it is well-formed input) but reaches SendGrid only in escaped form. End-to-end mailbox rendering is pending the controlled live render check (R2: one `example.com` link submit, owner confirms literal text) — stated, not fudged.
+A structurally-valid injection payload post-fix still passes validation (correct — it is well-formed input) but reaches SendGrid only in escaped form. Live R2 (2026-10-07) returned `200 {"success":true}`, so the escaped email was accepted for delivery; owner inbox confirmation that the link renders as literal text is the remaining step — stated, not fudged.
 
 **Status:** Fixed
 
@@ -692,7 +700,7 @@ Retest: allowance then `429 {"error":"Too many requests..."}`. Live post-deploy 
 User input → zod validation → escapeHtml → SendGrid → Business mailbox
 ```
 
-Retest: garbage → 400; well-formed injection payload passes validation but only escaped values reach the HTML body (asserted in §5). Caveat: end-to-end email rendering not observed (no real SendGrid key in test env).
+Retest: garbage → 400; well-formed injection payload passes validation but only escaped values reach the HTML body (asserted in §5). Live R2 (2026-10-07) returned `200 {"success":true}` — email accepted for delivery in escaped form; owner inbox confirmation that the link renders as literal text still pending.
 
 **Finding:** SEC-003 (gated by SEC-002)
 
@@ -804,7 +812,8 @@ curl -I https://nextjs.nkscloud.run.place/.git/HEAD   # expect 404
 - [x] Clickjacking verification (`SAMEORIGIN` live) — §10
 - [x] `.git` exposure verification (live 404) — §11
 - [ ] Real SendGrid email-render check in production (R2: one controlled submit, escaped-text rendering confirmed in the actual mailbox)
-- [ ] R1/R2 live retest completion (invalid → 400; injection → 200 + inbox check)
+- [x] R1/R2 live retest HTTP layer (invalid → 400; injection → 200, email accepted)
+- [ ] R2 inbox confirmation (link renders as literal text in the actual mailbox)
 - [ ] GitHub `SENDGRID_*` secrets + merge of CI export (staged on `security-fixes`; merge gated) + rotation of any exposed credential
 - [ ] PM2 non-root / UFW / Nginx config host verification — §14 (docs-based)
 - [ ] HTTPS certificate / public-URL checks — deployment evidence already in `screenshots/`
