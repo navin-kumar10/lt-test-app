@@ -431,3 +431,28 @@ UFW:
 https://nextjs.nkscloud.run.place
 
 Deployment is complete. The application security findings and remediation are documented separately in `SECURITY_REPORT.md`.
+
+## Decisions & Rationale
+
+Short version of why the server looks the way it does:
+
+* **Dedicated `deploy` user, app never runs as root.** A compromised Node process then starts with no privilege — no rewriting system files, no reading other users' keys, no privileged ports. (This is also the answer to the assessment's root scenario.)
+* **UFW allow-list: 2222, 80, 443 only.** SSH on a non-default port cuts automated scanner noise; 80 exists only to serve the ACME challenge and redirect to HTTPS; 3000 stays firewalled so Next.js is reachable solely via Nginx.
+* **SSH key-only on port 2222, root login disabled.** Password auth is the brute-force surface; removing it removes the attack class, not just the attempts.
+* **Node via nvm, PM2 in fork mode with `pm2 save` + systemd persistence.** Survives reboots without manual steps; `--update-env` on redeploy so new env takes effect.
+* **Next.js bound to 127.0.0.1:3000 behind Nginx.** Defense in depth with the firewall: even a firewall mistake doesn't directly expose the app server. Nginx owns TLS termination, header hardening, and the `/.git` deny-block.
+* **Let's Encrypt via Certbot.** Free, automated renewal, no self-signed warnings for reviewers.
+* **`.git` blocked in Nginx, not just by absence.** The deploy is a git checkout, so metadata exists on disk — the deny rule is load-bearing.
+
+## Evidence Index
+
+| Required evidence | Where |
+|---|---|
+| PM2 process list (+ non-root user, localhost bind, reboot persistence) | `screenshots/pm2-status.png` — verified: `lt-test-app` online, user `deploy`, cmdline `next start -H 127.0.0.1 -p 3000`, `pm2-deploy.service` active |
+| HTTPS working in browser | `screenshots/app-browser.png` — verified: live site loaded over HTTPS |
+| UFW status | `sudo ufw status verbose` inline in §5; confirm the matching screenshot in `screenshots/` |
+| Nginx config | server-block inline in §9; confirm the matching screenshot in `screenshots/` |
+| SSL certificate | `sudo certbot certificates` inline in §10; confirm the matching screenshot in `screenshots/` |
+| CI/CD workflow | `.github/workflows/deploy.yml` + `screenshots/git-actions.png`, `screenshots/cd-ec2.png`, `screenshots/ci-cd-ec2.png` |
+
+Note: `pm2-status.png` predates the security-fix redeploy (shows next-server v15.1.0). Refresh it after deploying the fixed build so the evidence matches what is running.
