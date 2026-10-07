@@ -360,7 +360,7 @@ Every field passes through a 5-line `escapeHtml()` (`route.ts:31-39`) before HTM
 interpolations inside html email body: ['safeName', 'safeEmail', 'safePhone', 'safeMessage']
 ```
 
-A structurally-valid injection payload post-fix still passes validation (correct — it is well-formed input) but reaches SendGrid only in escaped form. Live R2 (2026-10-07) returned `200 {"success":true}`, so the escaped email was accepted for delivery; owner inbox confirmation that the link renders as literal text is the remaining step — stated, not fudged.
+A structurally-valid injection payload post-fix still passes validation (correct — it is well-formed input) but reaches SendGrid only in escaped form. Live R2 (2026-10-07) returned `200 {"success":true}`, and the received email (`screenshots/sg-mail.png`) shows the payload as literal text — `<a href="https://example.com">click here</a>` visible, not rendered as a link. Escaping confirmed end-to-end in a real mailbox. (Gmail filed it under Spam: expected for a new sender plus test content; SPF/DKIM domain authentication is the deliverability follow-up, not an app finding.)
 
 **Status:** Fixed
 
@@ -694,13 +694,13 @@ Retest: allowance then `429 {"error":"Too many requests..."}`. Live post-deploy 
 
 ## Scenario 2 — Inject malicious link into business email
 
-**Result:** Was vulnerable; **fixed and verified** (with one stated caveat).
+**Result:** Was vulnerable; **fixed and verified end-to-end (HTTP layer + real mailbox).**
 
 ```text
 User input → zod validation → escapeHtml → SendGrid → Business mailbox
 ```
 
-Retest: garbage → 400; well-formed injection payload passes validation but only escaped values reach the HTML body (asserted in §5). Live R2 (2026-10-07) returned `200 {"success":true}` — email accepted for delivery in escaped form; owner inbox confirmation that the link renders as literal text still pending.
+Retest: garbage → 400; well-formed injection payload passes validation but only escaped values reach the HTML body (asserted in §5). Live R2 returned `200` and the mailbox screenshot proves literal-text rendering (§5, `screenshots/sg-mail.png`).
 
 **Finding:** SEC-003 (gated by SEC-002)
 
@@ -813,7 +813,8 @@ curl -I https://nextjs.nkscloud.run.place/.git/HEAD   # expect 404
 - [x] `.git` exposure verification (live 404) — §11
 - [ ] Real SendGrid email-render check in production (R2: one controlled submit, escaped-text rendering confirmed in the actual mailbox)
 - [x] R1/R2 live retest HTTP layer (invalid → 400; injection → 200, email accepted)
-- [ ] R2 inbox confirmation (link renders as literal text in the actual mailbox)
+- [x] R2 inbox confirmation (literal-text rendering in real mailbox, `screenshots/sg-mail.png`; Spam placement = new-sender effect, SPF/DKIM recommended)
+- [x] End-to-end mail flow (test + burst emails visible in inbox, `screenshots/send-grid-2.png`)
 - [ ] GitHub `SENDGRID_*` secrets + merge of CI export (staged on `security-fixes`; merge gated) + rotation of any exposed credential
 - [ ] PM2 non-root / UFW / Nginx config host verification — §14 (docs-based)
 - [ ] HTTPS certificate / public-URL checks — deployment evidence already in `screenshots/`
@@ -829,7 +830,7 @@ The infrastructure deployment was already reasonably hardened; the application l
 3. **HTML injection in outbound business email** → escaped interpolation (verified at HTTP + source level)
 4. **Outdated Next.js with known vulnerabilities** → 15.5.27, build green (verified)
 
-Residual, openly documented: in-memory limiter (single-instance OK), `X-Forwarded-For` trust (fine behind this Nginx; prefer `X-Real-IP`), no CSP yet, no CAPTCHA/quota monitoring, build-time-only audit leftovers. Production runs the fixed build (merged to `main`, live-verified 2026-10-07); remaining: mailbox render check (R2), R1/R2 completion, GitHub secrets + CI merge with credential rotation.
+Residual, openly documented: in-memory limiter (single-instance OK), `X-Forwarded-For` trust (fine behind this Nginx; prefer `X-Real-IP`), no CSP yet, no CAPTCHA/quota monitoring, build-time-only audit leftovers. Production runs the fixed build (merged to `main`, live-verified 2026-10-07, mailbox rendering proven with screenshots). Remaining: credential rotation for any exposed key; CSP header and CAPTCHA/quota-monitoring as future hardening.
 
 ---
 
